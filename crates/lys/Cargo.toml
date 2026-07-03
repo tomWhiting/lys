@@ -2,5 +2,8 @@
 name = "lys"
 version = "0.1.0"
 edition = "2024"
+description = "Cryptographic trust infrastructure for AI agents."
+repository = "https://github.com/tomWhiting/lys"
+readme = "../../README.md"
 
 [dependencies]
