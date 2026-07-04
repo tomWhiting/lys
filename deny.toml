@@ -1,0 +1,28 @@
+# cargo-deny configuration. Gates supply-chain risk on a crate whose whole
+# purpose is trust — a compromised dependency defeats the point.
+
+[advisories]
+version = 2
+yanked = "deny"
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[licenses]
+version = 2
+# Permissive licenses compatible with Apache-2.0 distribution.
+allow = [
+    "Apache-2.0",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+]
+confidence-threshold = 0.9
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

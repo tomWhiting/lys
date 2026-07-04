@@ -1,9 +1,23 @@
 [package]
 name = "lys"
-version = "0.1.0"
-edition = "2024"
-description = "Cryptographic trust infrastructure for AI agents."
-repository = "https://github.com/tomWhiting/lys"
+description = "Cryptographic trust infrastructure for AI agents — CLI for identity, attestation, transparency logs, and verification."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
 readme = "../../README.md"
+keywords = ["cryptography", "transparency", "agents", "audit", "cli"]
+categories = ["cryptography", "command-line-utilities"]
+
+[[bin]]
+name = "lys"
+path = "src/main.rs"
 
 [dependencies]
+lys-core.workspace = true
+clap.workspace = true
+
+[lints]
+workspace = true

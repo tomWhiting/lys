@@ -78,15 +78,17 @@ An adversarial review (July 2026) of `meridian-trust` produced the punch list be
 
 Sound and carried forward unchanged: the Ed25519→X25519 derivation, the authenticated-seal composition (attestation covers every wire byte; verification gates before decryption), Merkle panic-safety, per-seal nonce derivation, and redaction discipline.
 
-## Integration map
+## Integration: Norn is the primary consumer
 
-**Norn (agent runtime) — first proof.** Every persisted session event flows through one chokepoint: `EventStore::append` → the `PersistenceSink` trait. A lys signing sink decorates the existing JSONL sink — sign each event, maintain the session Merkle root — and `checkpoint()` is the natural anchoring moment. Zero core-loop changes. Norn's own design (norn-runtime D12) already anticipates this integration: `CallerContext.agent_cert_fingerprint`, cert-signed cross-boundary tool actions. Agent spawn is the cert-issuance moment; the MCP server/client boundary (currently carrying no caller attestation) is the A2A trust surface.
+The original crate was built inside Meridian, but Meridian is not lys's real customer. **Norn — the Ablative agent runtime — is.** Meridian consumes Norn as a library, so wherever Meridian needs trust it inherits it transitively; and as the stack's second generation lands (everything as library + CLI + MCP surface, composed rather than monolithic), Meridian becomes an in-house means-to-an-end rather than the consumer lys is designed around. Design for Norn first.
 
-**Haematite (storage) — the durable home.** Session logs and anchored roots persist in haematite's `EventStore` (ordered, append-only leaves). Lys supplies exactly what haematite structurally lacks: signatures over commits, and hash-chained commit lineage (its commit log is currently a flat timestamped list). A haematite root anchored through lys makes a whole database state attestable.
+**Norn (agent runtime) — the primary consumer and the payoff.** Every persisted session event flows through one chokepoint: `EventStore::append` → the `PersistenceSink` trait. A lys signing sink decorates the existing JSONL sink — sign each event, maintain the session Merkle root — and `checkpoint()` is the natural anchoring moment. Zero core-loop changes. Norn's own design (norn-runtime D12) already anticipates this: `CallerContext.agent_cert_fingerprint`, cert-signed cross-boundary tool actions. Agent spawn is the cert-issuance moment; the MCP server/client boundary (currently carrying no caller attestation) is the agent-to-agent trust surface. Norn as headless JSON-RPC, each agent attachable at its own position, nothing happening in darkness — lys is the layer that makes "nothing in darkness" cryptographically true rather than merely observable.
 
-**Meridian (exchange) — existing consumer.** The exchange keeps consuming the core crate exactly as it does today (certificate auth, transparency log, receipts, sealed dispatch); it becomes the reference implementation of a lys-trusted domain.
+**Aion (durable workflows) — the strongest claim.** Norn agents run as Aion workflows that survive power loss and replay deterministically from an immutable event history. That upgrades "the log is untampered" to "the log is re-derivable": signed event chain + deterministic replay is a stronger guarantee than any TEE attestation, in software alone. This is the claim no competitor with a runtime they don't own can make.
 
-**Aion (workflows) — the strongest claim.** Deterministic replay upgrades "the log is untampered" to "the log is re-derivable." Signed event chain + replay is a stronger guarantee than TEE attestation, in software alone.
+**Haematite (storage) — the durable home.** Session logs and anchored roots persist in haematite's `EventStore` (ordered, append-only leaves), and Norn sessions become portable — an agent's history moves across nodes and clusters instead of being locked in a folder. Lys supplies exactly what haematite structurally lacks: signatures over commits, and hash-chained commit lineage (its commit log is currently a flat timestamped list). A haematite root anchored through lys makes a whole database state attestable.
+
+**Meridian (exchange) — reference consumer, not target.** The exchange already consumes the hardened crate (certificate auth, transparency log, receipts, sealed dispatch) and serves as the reference implementation of a lys-trusted domain and the migration test for the extraction — but it is not the audience the API is shaped for.
 
 ## Non-goals
 
@@ -106,14 +108,6 @@ Sound and carried forward unchanged: the Ed25519→X25519 derivation, the authen
 
 ## Roadmap
 
-| Phase | Deliverable | Proof |
-|---|---|---|
-| 0 | Harden `meridian-trust` in place (punch list above) | Adversarial re-review clean; workspace green |
-| 1 | Extract to this repo as `lys-core`; exchange consumes it externally | Meridian builds against published crate |
-| 2 | Norn signing sink: signed, Merkle-rooted session logs | A norn session verifiable end-to-end offline |
-| 3 | `lys-verify` CLI | Third party verifies a session with no access to the operator |
-| 4 | `lys-anchor` MVP (hosted ledger, COSE receipts) | Tampering between anchor points detected in demo |
-| 5 | SCITT interop + agent claim schemas | Receipts verify with non-lys tooling |
-| 6 | Haematite commit attestation; A2A cert exchange over MCP | Cross-instance verified dispatch |
+The phase-by-phase plan, with proof points, lives in [ROADMAP.md](ROADMAP.md). In brief: Phase 0 (harden the primitives) is **done**; Phase 1 extracts them to `lys-core`; Phase 2 gives the `lys` CLI surface; Phase 3 — the payoff — is the Norn signing sink, producing signed, Merkle-rooted, replayable session logs; Phase 4 adds the `lys-anchor` transparency service; Phases 5–6 cover SCITT interop, agent claim schemas, haematite commit attestation, and agent-to-agent verified dispatch.
 
-Phase 2 is the demo nobody else can give: an agent session that is signed, anchored, and — because the runtime is deterministic — re-runnable. Prove it on norn first *because* we own the runtime; generalise to "anyone's agents via MCP" from a position of working evidence.
+The Norn integration is the demo nobody else can give: an agent session that is signed, anchored, and — because the runtime is deterministic — re-runnable. Prove it on Norn first *because* we own the runtime; generalise to "anyone's agents via MCP" from a position of working evidence.

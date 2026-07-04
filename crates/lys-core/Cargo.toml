@@ -1,6 +1,38 @@
 [package]
 name = "lys-core"
-version = "0.1.0"
-edition = "2024"
+description = "Domain-agnostic cryptographic trust primitives — certificate authority, Merkle transparency log, signed attestations, sealed envelopes, and Ed25519 key management."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+keywords = ["cryptography", "transparency", "merkle", "attestation", "agents"]
+categories = ["cryptography"]
 
 [dependencies]
+aes-gcm.workspace = true
+base64.workspace = true
+chrono.workspace = true
+ct-merkle.workspace = true
+ed25519-dalek.workspace = true
+hkdf.workspace = true
+postcard.workspace = true
+rand.workspace = true
+rcgen.workspace = true
+serde.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+time.workspace = true
+tracing.workspace = true
+x25519-dalek.workspace = true
+x509-parser.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+serial_test.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

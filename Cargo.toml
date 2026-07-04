@@ -1,3 +1,109 @@
 [workspace]
 members = ["crates/lys", "crates/lys-core"]
 resolver = "3"
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/tomWhiting/lys"
+authors = ["Tom Whiting <tom@ablative.com.au>"]
+rust-version = "1.85"
+
+[workspace.dependencies]
+# Internal
+lys-core = { version = "0.0.1", path = "crates/lys-core" }
+
+# Cryptographic primitives — pinned at the versions hardened in meridian-trust.
+# This lineup is deliberate and boring: the trust layer speaks the verification
+# world's lingua franca (SHA-256, Ed25519, RFC 6962) so third parties can verify
+# with standard tooling. See docs/DESIGN.md "Primitive decisions".
+aes-gcm = "0.10"
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+ct-merkle = "0.2"
+ed25519-dalek = { version = "2", features = ["pkcs8", "serde"] }
+hkdf = "0.12"
+postcard = { version = "1", features = ["alloc"] }
+rand = "0.9"
+rcgen = "0.13"
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
+thiserror = "2"
+time = "0.3"
+tracing = "0.1"
+x25519-dalek = { version = "2", features = ["serde", "static_secrets"] }
+x509-parser = "0.16"
+zeroize = { version = "1", features = ["derive"] }
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Dev
+serial_test = "3"
+tempfile = "3"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.clippy]
+# Pedantic baseline. CI runs `clippy --all-targets -- -D warnings`, so every
+# "warn" below is a hard merge gate, not advisory.
+pedantic = { level = "warn", priority = -1 }
+
+# Unwrap / Expect / Panic — forbidden in library code. Tests opt out per-module
+# with #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)].
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+unimplemented = "warn"
+todo = "warn"
+unreachable = "warn"
+
+# Cloning and allocation discipline
+clone_on_ref_ptr = "warn"
+redundant_clone = "warn"
+cloned_instead_of_copied = "warn"
+flat_map_option = "warn"
+implicit_clone = "warn"
+
+# Error handling
+result_large_err = "warn"
+map_err_ignore = "warn"
+
+# Memory / performance
+large_futures = "warn"
+large_stack_arrays = "warn"
+large_types_passed_by_value = "warn"
+boxed_local = "warn"
+vec_box = "warn"
+rc_buffer = "warn"
+
+# Code clarity
+explicit_deref_methods = "warn"
+explicit_into_iter_loop = "warn"
+explicit_iter_loop = "warn"
+manual_let_else = "warn"
+match_bool = "warn"
+match_same_arms = "warn"
+match_wild_err_arm = "warn"
+needless_pass_by_value = "warn"
+trivially_copy_pass_by_ref = "warn"
+unnecessary_wraps = "warn"
+used_underscore_binding = "warn"
+get_unwrap = "warn"
+inefficient_to_string = "warn"
+string_lit_as_bytes = "warn"
+future_not_send = "warn"
+
+# Deliberate allows — noise, not signal for this codebase
+str_to_string = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_inception = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+too_many_lines = "allow"
+struct_excessive_bools = "allow"
