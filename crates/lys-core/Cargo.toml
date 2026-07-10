@@ -35,6 +35,7 @@ zeroize.workspace = true
 coset.workspace = true
 serde_json.workspace = true
 serial_test.workspace = true
+signed_note = "0.2.0"
 tempfile.workspace = true
 
 [lints]
