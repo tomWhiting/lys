@@ -10,6 +10,9 @@ rust-version.workspace = true
 readme = "README.md"
 keywords = ["cryptography", "transparency", "merkle", "attestation", "agents"]
 categories = ["cryptography"]
+# The vendored Go reference implementations exist only for the shell-out
+# conformance gates; the published package must not carry them.
+exclude = ["tests/go-conformance/", "tests/cose-conformance/"]
 
 [dependencies]
 aes-gcm.workspace = true
