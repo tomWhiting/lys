@@ -29,6 +29,7 @@ pub fn run(attestation_path: &Path, payload_path: &Path) -> CliResult<()> {
     let envelope_bytes = read_file(attestation_path, "attestation file")?;
     let attestation: Attestation =
         serde_json::from_slice(&envelope_bytes).map_err(|source| CliError::JsonParse {
+            what: "attestation",
             path: attestation_path.to_path_buf(),
             source,
         })?;

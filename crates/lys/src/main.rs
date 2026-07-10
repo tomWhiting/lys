@@ -46,6 +46,26 @@ fn main() -> ExitCode {
             attestation,
             payload,
         } => commands::verify::run(&attestation, &payload),
+        Command::Seal {
+            key,
+            recipient_public_key,
+            payload,
+            out,
+            attestation_out,
+        } => commands::seal::seal(
+            &key,
+            &recipient_public_key,
+            &payload,
+            &out,
+            &attestation_out,
+        ),
+        Command::Open {
+            key,
+            sender_public_key,
+            envelope,
+            attestation,
+            out,
+        } => commands::seal::open(&key, &sender_public_key, &envelope, &attestation, &out),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

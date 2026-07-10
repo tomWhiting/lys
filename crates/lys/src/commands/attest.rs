@@ -26,8 +26,11 @@ pub fn run(key: &Path, payload: &Path, out: &Path) -> CliResult<()> {
     let identity = load_identity(key)?;
     let payload_bytes = read_file(payload, "payload file")?;
     let attestation = sign_attestation(&payload_bytes, &identity);
-    let mut json = serde_json::to_string_pretty(&attestation)
-        .map_err(|source| CliError::JsonSerialize { source })?;
+    let mut json =
+        serde_json::to_string_pretty(&attestation).map_err(|source| CliError::JsonSerialize {
+            what: "attestation",
+            source,
+        })?;
     json.push('\n');
     write_file(out, json.as_bytes(), "attestation file")?;
     println!("attested payload: {}", payload.display());

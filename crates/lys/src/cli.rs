@@ -55,6 +55,66 @@ pub enum Command {
         #[arg(long)]
         payload: PathBuf,
     },
+
+    /// Seal a payload for a recipient and sign the envelope with the
+    /// sender's identity (X25519 + HKDF-SHA256 + AES-256-GCM, Ed25519
+    /// attestation over the sealed bytes).
+    ///
+    /// Writes two JSON files: the sealed envelope to --out and the sender
+    /// attestation binding it to --attestation-out. `lys open` requires
+    /// both.
+    Seal {
+        /// Path to the sender's identity key file (raw 32-byte Ed25519
+        /// seed). Must already exist — run `lys key generate` first.
+        #[arg(long)]
+        key: PathBuf,
+
+        /// Recipient X25519 public key as 64 hexadecimal characters — the
+        /// `public key (x25519)` line printed by `lys key inspect`.
+        #[arg(long)]
+        recipient_public_key: String,
+
+        /// Path to the payload file to seal.
+        #[arg(long)]
+        payload: PathBuf,
+
+        /// Path to write the JSON sealed envelope to.
+        #[arg(long)]
+        out: PathBuf,
+
+        /// Path to write the JSON sender attestation to.
+        #[arg(long)]
+        attestation_out: PathBuf,
+    },
+
+    /// Open a sealed envelope, verifying the sender attestation before
+    /// decrypting. The plaintext is written to --out, never to stdout.
+    ///
+    /// Exits 0 on success, 1 otherwise with a single generic failure
+    /// message.
+    Open {
+        /// Path to the recipient's identity key file (raw 32-byte Ed25519
+        /// seed). Must already exist — run `lys key generate` first.
+        #[arg(long)]
+        key: PathBuf,
+
+        /// Expected sender Ed25519 public key as 64 hexadecimal characters
+        /// — the `public key (ed25519)` line printed by `lys key inspect`.
+        #[arg(long)]
+        sender_public_key: String,
+
+        /// Path to the JSON sealed envelope produced by `lys seal`.
+        #[arg(long)]
+        envelope: PathBuf,
+
+        /// Path to the JSON sender attestation produced by `lys seal`.
+        #[arg(long)]
+        attestation: PathBuf,
+
+        /// Path to write the decrypted payload to.
+        #[arg(long)]
+        out: PathBuf,
+    },
 }
 
 /// `lys ca` subcommands.

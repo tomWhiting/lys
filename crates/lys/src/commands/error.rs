@@ -37,9 +37,12 @@ pub enum CliError {
     #[error(transparent)]
     Trust(#[from] lys_core::TrustError),
 
-    /// An attestation envelope file could not be parsed as JSON.
-    #[error("failed to parse attestation JSON from {}: {source}", path.display())]
+    /// A JSON file carrying a `lys-core` wire type (attestation envelope,
+    /// sealed envelope) could not be parsed.
+    #[error("failed to parse {what} JSON from {}: {source}", path.display())]
     JsonParse {
+        /// What the file was expected to contain, e.g. "attestation".
+        what: &'static str,
         /// File that was being parsed.
         path: PathBuf,
         /// Underlying JSON error.
@@ -47,9 +50,11 @@ pub enum CliError {
         source: serde_json::Error,
     },
 
-    /// Serializing an attestation envelope to JSON failed.
-    #[error("failed to serialize attestation to JSON: {source}")]
+    /// Serializing a `lys-core` wire type to JSON failed.
+    #[error("failed to serialize {what} to JSON: {source}")]
     JsonSerialize {
+        /// What was being serialized, e.g. "attestation".
+        what: &'static str,
         /// Underlying JSON error.
         #[source]
         source: serde_json::Error,
@@ -97,6 +102,27 @@ pub enum CliError {
         "invalid issuer public key: expected exactly 64 hexadecimal characters (a 32-byte Ed25519 key)"
     )]
     InvalidIssuerPublicKey,
+
+    /// A recipient public key argument was not exactly 64 hexadecimal
+    /// characters (a 32-byte X25519 key as printed by `lys key inspect`).
+    #[error(
+        "invalid recipient public key: expected exactly 64 hexadecimal characters (a 32-byte X25519 key)"
+    )]
+    InvalidRecipientPublicKey,
+
+    /// A sender public key argument was not exactly 64 hexadecimal
+    /// characters (a 32-byte Ed25519 key as printed by `lys key inspect`).
+    #[error(
+        "invalid sender public key: expected exactly 64 hexadecimal characters (a 32-byte Ed25519 key)"
+    )]
+    InvalidSenderPublicKey,
+
+    /// A sealed envelope could not be opened. Deliberately non-oracle: a
+    /// wrong recipient key, a forged or mismatched sender attestation, and a
+    /// tampered or corrupt envelope all collapse to this one message so a
+    /// caller learns nothing about which check rejected the envelope.
+    #[error("sealed envelope open failed: invalid attestation or undecryptable envelope")]
+    OpenFailed,
 
     /// A timestamp argument could not be parsed as RFC 3339.
     #[error("invalid timestamp {value:?}: expected RFC 3339, e.g. 2026-07-10T12:00:00Z ({source})")]
@@ -160,6 +186,34 @@ mod tests {
         // Non-oracle: the message must not single out one failing check.
         assert!(!display.contains("expired"), "got: {display}");
         assert!(!display.contains("self-signed"), "got: {display}");
+    }
+
+    #[test]
+    fn open_failed_display_is_single_and_generic() {
+        let display = CliError::OpenFailed.to_string();
+        assert!(
+            display.contains("sealed envelope open failed"),
+            "got: {display}"
+        );
+        // Non-oracle: the message must not single out one failing check.
+        assert!(!display.contains("wrong"), "got: {display}");
+        assert!(!display.contains("tampered"), "got: {display}");
+        assert!(!display.contains("signer"), "got: {display}");
+    }
+
+    #[test]
+    fn json_parse_display_names_role_and_path() {
+        let err = CliError::JsonParse {
+            what: "sealed envelope",
+            path: PathBuf::from("/envelopes/e.json"),
+            source: serde_json::from_str::<serde_json::Value>("{").unwrap_err(),
+        };
+        let display = err.to_string();
+        assert!(
+            display.contains("failed to parse sealed envelope JSON"),
+            "got: {display}"
+        );
+        assert!(display.contains("/envelopes/e.json"), "got: {display}");
     }
 
     #[test]

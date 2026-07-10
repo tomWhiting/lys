@@ -11,4 +11,5 @@ pub mod files;
 pub mod hex;
 pub mod key;
 pub mod pem;
+pub mod seal;
 pub mod verify;
