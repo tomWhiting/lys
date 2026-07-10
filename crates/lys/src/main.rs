@@ -16,7 +16,9 @@ use std::process::ExitCode;
 
 use clap::Parser;
 
-use crate::cli::{CaCommand, Cli, Command, KeyCommand};
+use crate::cli::{
+    CaCommand, Cli, Command, KeyCommand, LogCommand, LogProveCommand, LogVerifyCommand,
+};
 
 /// Entry point: parse arguments, dispatch, and translate the outcome into an
 /// exit code. Every failure path prints a diagnostic to stderr.
@@ -25,7 +27,41 @@ fn main() -> ExitCode {
     let result = match cli.command {
         Command::Key(key_command) => match key_command {
             KeyCommand::Generate { out } => commands::key::generate(&out),
-            KeyCommand::Inspect { key } => commands::key::inspect(&key),
+            KeyCommand::Inspect { key, note_name } => {
+                commands::key::inspect(&key, note_name.as_deref())
+            }
+        },
+        Command::Log(log_command) => match log_command {
+            LogCommand::Init { dir, origin } => commands::log::init::run(&dir, &origin),
+            LogCommand::Append { dir, leaf } => commands::log::append::run(&dir, &leaf),
+            LogCommand::Checkpoint { dir, key, out } => {
+                commands::log::checkpoint::run(&dir, &key, &out)
+            }
+            LogCommand::Prove(prove_command) => match prove_command {
+                LogProveCommand::Inclusion {
+                    dir,
+                    key,
+                    leaf_index,
+                    out,
+                } => commands::log::prove::inclusion(&dir, &key, leaf_index, &out),
+                LogProveCommand::Consistency {
+                    dir,
+                    key,
+                    old_size,
+                    out,
+                } => commands::log::prove::consistency(&dir, &key, old_size, &out),
+            },
+            LogCommand::Verify(verify_command) => match verify_command {
+                LogVerifyCommand::Inclusion {
+                    artifact,
+                    leaf,
+                    verifier_key,
+                } => commands::log::verify::inclusion(&artifact, &leaf, &verifier_key),
+                LogVerifyCommand::Consistency {
+                    artifact,
+                    verifier_key,
+                } => commands::log::verify::consistency(&artifact, &verifier_key),
+            },
         },
         Command::Ca(ca_command) => match ca_command {
             CaCommand::Issue {

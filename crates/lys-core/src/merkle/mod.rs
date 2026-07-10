@@ -27,11 +27,24 @@
 //! envelope; consumers needing long-lived verifiability should pin leaves
 //! as pre-encoded byte payloads. See the [`leaf`] module docs for details.
 //!
+//! **Raw-leaf invariant (alongside, not replacing, the postcard contract):**
+//! trees typed `AppendOnlyTree<RawLeaf>` hash leaf bytes verbatim, so every
+//! leaf hash is exactly RFC 6962's `SHA-256(0x00 ‖ leaf-bytes)` — a third
+//! party holding only the raw leaf file recomputes it with standard tooling
+//! (`(printf '\x00'; cat leaf-file) | shasum -a 256`). [`raw_leaf_hash`]
+//! computes that hash without a tree, and [`verify_inclusion_raw`] is the
+//! matching verification helper. The [`RawLeaf`] marker is uninhabited and
+//! non-`Serialize`, so the two leaf encodings cannot be mixed in one tree.
+//!
 //! [`TrustError::MerkleTree`]: crate::error::TrustError::MerkleTree
 
 pub mod leaf;
 pub mod proof;
 pub mod tree;
 
-pub use proof::{ConsistencyProof, InclusionProof, RootHash, verify_consistency, verify_inclusion};
-pub use tree::AppendOnlyTree;
+pub use leaf::raw_leaf_hash;
+pub use proof::{
+    ConsistencyProof, InclusionProof, RootHash, verify_consistency, verify_inclusion,
+    verify_inclusion_raw,
+};
+pub use tree::{AppendOnlyTree, RawLeaf};

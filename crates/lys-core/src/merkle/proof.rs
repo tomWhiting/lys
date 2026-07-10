@@ -209,6 +209,35 @@ pub fn verify_inclusion<L: Serialize>(
         })
 }
 
+/// Verifies inclusion of RAW leaf bytes (hashed as `SHA-256(0x00 ‖ bytes)`
+/// per RFC 6962), the counterpart of [`verify_inclusion`] for
+/// [`AppendOnlyTree<RawLeaf>`](super::tree::RawLeaf).
+///
+/// The bytes are hashed exactly as supplied — no postcard, no length
+/// prefix — so a third party holding only the raw leaf file recomputes the
+/// leaf hash with any SHA-256 tool and drives this verification from the
+/// published `(root bytes, leaf count)` and proof bytes alone.
+///
+/// # Errors
+///
+/// Returns [`TrustError::MerkleTree`] if ct-merkle reports that the proof
+/// does not verify against `root_hash` for the given `index` (including
+/// index-out-of-range, empty-tree root, incorrect-hash, or malformed-proof
+/// cases).
+pub fn verify_inclusion_raw(
+    root_hash: &RootHash,
+    leaf_bytes: &[u8],
+    index: u64,
+    proof: &InclusionProof,
+) -> TrustResult<()> {
+    root_hash
+        .inner
+        .verify_inclusion(&leaf_bytes, index, proof.as_inner())
+        .map_err(|e| TrustError::MerkleTree {
+            reason: format!("inclusion proof verification failed: {e}"),
+        })
+}
+
 /// Verifies that the tree described by `old_root` is a prefix of the tree
 /// described by `new_root`.
 ///

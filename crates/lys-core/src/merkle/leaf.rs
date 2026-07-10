@@ -5,7 +5,9 @@
 //! `ct_merkle::HashableLeaf`. A blanket impl is provided for any
 //! `T: AsRef<[u8]>`, so `SerializedLeaf` satisfies the bound by exposing
 //! its bytes through [`AsRef`]. The tree never sees the original `L` —
-//! `serialize_leaf` is the single conversion point.
+//! `serialize_leaf` is the single conversion point for `Serialize` leaves,
+//! and [`SerializedLeaf::from_raw_bytes`] is the single entry point for the
+//! raw-leaf path (see below).
 //!
 //! Serialization is performed with `postcard`, a compact and deterministic
 //! binary format. Two consumers serializing the same value with the same
@@ -39,6 +41,19 @@
 //! enter the tree are under the consumer's explicit control rather than
 //! derived from a Rust type's shape.
 //!
+//! # The raw-leaf path (transparency-log invariant)
+//!
+//! `postcard` prefixes byte-sequence leaves with a length varint, so the
+//! bytes a `Serialize` tree hashes are **not** the consumer's bytes — a
+//! third party holding only the raw leaf cannot recompute the leaf hash
+//! with standard tooling. [`SerializedLeaf::from_raw_bytes`] wraps bytes
+//! verbatim (no postcard, no length prefix), so a tree fed through it
+//! hashes exactly `SHA-256(0x00 ‖ bytes)` per RFC 6962. **Invariant:** for
+//! every raw leaf, `leaf_hash = SHA-256(0x00 ‖ leaf-bytes)`; reproduce with
+//! `(printf '\x00'; cat leaf-file) | shasum -a 256`. The postcard contract
+//! above is untouched — the two paths never mix in one tree (see
+//! [`RawLeaf`](super::tree::RawLeaf)).
+//!
 //! Failures (e.g. a `Serialize` impl that returns an error) are mapped to
 //! [`TrustError::MerkleTree`], not panics.
 //!
@@ -46,6 +61,7 @@
 //! [`TrustError::MerkleTree`]: crate::error::TrustError::MerkleTree
 
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 use crate::error::{TrustError, TrustResult};
 
@@ -59,6 +75,14 @@ use crate::error::{TrustError, TrustResult};
 pub(crate) struct SerializedLeaf(Vec<u8>);
 
 impl SerializedLeaf {
+    /// Wraps bytes VERBATIM — no postcard, no length prefix. The tree then
+    /// hashes exactly `SHA-256(0x00 ‖ bytes)` per RFC 6962. This is the
+    /// transparency-log invariant path: a third party holding only the raw
+    /// leaf bytes recomputes the leaf hash with any SHA-256 tool.
+    pub(crate) fn from_raw_bytes(bytes: Vec<u8>) -> Self {
+        Self(bytes)
+    }
+
     /// Read-only access to the serialized bytes, used by tests in this crate
     /// to assert content stability.
     #[cfg(test)]
@@ -94,6 +118,20 @@ pub(crate) fn serialize_leaf<L: Serialize>(leaf: &L) -> TrustResult<SerializedLe
         .map_err(|e| TrustError::MerkleTree {
             reason: format!("failed to serialize leaf for Merkle tree: {e}"),
         })
+}
+
+/// RFC 6962 leaf hash of raw bytes: `SHA-256(0x00 ‖ leaf_bytes)`.
+///
+/// Public so consumers (and the CLI) can display and compare leaf hashes
+/// without a tree. **Invariant:** this is exactly the hash the raw-leaf
+/// tree ([`RawLeaf`](super::tree::RawLeaf)) computes for a leaf, and it is
+/// reproducible by any stranger with standard tooling:
+/// `(printf '\x00'; cat leaf-file) | shasum -a 256`.
+pub fn raw_leaf_hash(leaf_bytes: &[u8]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update([0x00]);
+    hasher.update(leaf_bytes);
+    hasher.finalize().into()
 }
 
 #[cfg(test)]

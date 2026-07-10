@@ -16,14 +16,17 @@ These are live contracts. Evolving any of them means a new `v2` artifact alongsi
 |---|---|---|
 | Attestation `lys/attestation/v1` | JSON (serde shape of `Attestation`); signature over `domain-tag ‖ timestamp_le ‖ payload_hash` | `lys-core/src/attestation/` |
 | Sealed envelope `lys/sealed-envelope/v1` | JSON (serde shape of `SealedEnvelope`); X25519 ephemeral + HKDF-SHA256 (info `lys-sealed-envelope/v1`) + AES-256-GCM | `lys-core/src/seal/` |
-| Merkle leaf encoding | postcard serialization of the leaf type; leaf hash = RFC 6962 `SHA-256(0x00 ‖ leaf-bytes)` | `lys-core/src/merkle/` |
+| Merkle leaf encoding — typed (`Serialize`) path | postcard serialization of the leaf type; leaf hash = RFC 6962 `SHA-256(0x00 ‖ postcard-bytes)` | `lys-core/src/merkle/` (`AppendOnlyTree<L: Serialize>`) |
+| Merkle leaf encoding — raw path (transparency log; every `lys log` artifact) | leaf **file bytes verbatim** — no postcard framing, no length prefix; leaf hash = RFC 6962 `SHA-256(0x00 ‖ raw-file-bytes)`, reproducible as `(printf '\x00'; cat leaf-file) \| shasum -a 256` | `lys-core/src/merkle/` (`RawLeaf`, `raw_leaf_hash`, `verify_inclusion_raw`) |
 | Certificates | X.509 (rcgen-issued, Ed25519), capability claims in an extension under `LYS_OID_ARC` | `lys-core/src/ca/` |
+
+The two leaf encodings are separate frozen contracts that never mix within one tree (the `RawLeaf` marker type makes mixing unrepresentable). They diverge on the wire: for the leaf bytes `leaf-0`, the raw path hashes `SHA-256(0x00 ‖ "leaf-0")` while the postcard path hashes `SHA-256(0x00 ‖ 0x06 ‖ "leaf-0")` (postcard's length prefix) — sentinel tests in `merkle/tree_tests.rs` and `merkle/proof_tests.rs` pin the divergence. A third-party verifier of `lys log` artifacts MUST use the raw path.
 
 Note: `lys/attestation/v1` is frozen as a format, but §4.2 proposes that **the durable, stranger-facing attestation artifact for 0.1.0 becomes COSE** — v1 remains valid and verifiable forever; it simply may not be what we lead with. Ratification decides.
 
 ---
 
-## 2. PROPOSED — signed tree root: C2SP checkpoint (signed note)
+## 2. IMPLEMENTED (D1) — signed tree root: C2SP checkpoint (signed note)
 
 **The artifact `lys log` emits for "here is the state of the log, signed" is a [C2SP tlog-checkpoint](https://github.com/C2SP/C2SP/blob/main/tlog-checkpoint.md) wrapped in the [C2SP signed-note](https://github.com/C2SP/C2SP/blob/main/signed-note.md) envelope, signed with Ed25519.**
 
@@ -69,7 +72,7 @@ Byte-exact rules that Go/Rust verifiers enforce silently — each one gets a tes
 
 ---
 
-## 3. PROPOSED — inclusion & consistency proofs: self-contained JSON objects
+## 3. IMPLEMENTED (D2) — inclusion & consistency proofs: self-contained JSON objects
 
 **The artifacts `lys log prove` emits are JSON objects carrying the RFC 6962 proof triple plus the relevant checkpoint(s) embedded verbatim** — the Sigstore-bundle `InclusionProof` pattern, which is the surviving precedent for proofs persisted as files rather than served from an online API.
 
@@ -104,7 +107,7 @@ Byte-exact rules that Go/Rust verifiers enforce silently — each one gets a tes
 - Sizes/indices: JSON decimal numbers. lys refuses to emit proofs for trees at or beyond 2^53 leaves (JSON number precision boundary); stated here so the limit is a documented contract, not a surprise.
 - The `format` field is a lys addition (self-describing files are worth one field); everything else mirrors the sigstore `InclusionProof` shape so the fields are recognizable to existing verifiers.
 - **Redundancy is checked, not trusted:** `tree_size` MUST equal the embedded checkpoint's line-2 value (and root recomputed from the proof MUST equal the checkpoint's line-3 hash); `lys log verify` rejects mismatches. A proof without its checkpoint is unverifiable, which is why the checkpoint rides inside the artifact.
-- The leaf itself is NOT in the artifact. The verifier holds the leaf bytes (the thing being proven), computes the RFC 6962 leaf hash per the frozen leaf-encoding contract, and runs the proof. This matches how every sigstore verifier works and keeps the proof privacy-neutral — a proof file alone reveals no log contents.
+- The leaf itself is NOT in the artifact. The verifier holds the leaf bytes (the thing being proven), computes the RFC 6962 **raw-path** leaf hash `SHA-256(0x00 ‖ raw-file-bytes)` — the raw leaf-encoding row in §1: the file bytes verbatim, with **no postcard framing** — and runs the proof. This matches how every sigstore verifier works and keeps the proof privacy-neutral — a proof file alone reveals no log contents.
 - Third-party verifiability today: any RFC 6962 verifier — Go `sumdb/tlog`, Rust `ct-merkle` / `tlog_tiles::check_record`/`check_tree` — after a trivial base64 decode; the shape is hand-checkable with a 20-line script. That is the bar.
 
 ### 3.4 Forward-compatibility with RFC 9942 (why this freeze is not a trap)
@@ -136,11 +139,11 @@ Proposal: the stranger-facing attestation artifact becomes a **COSE_Sign1** (pay
 
 | # | Decision | Status |
 |---|---|---|
-| D1 | Signed root artifact = C2SP checkpoint in signed-note envelope, Ed25519, no timestamp line, no extension lines in v1 (§2) | **PROPOSED — awaiting ratification** |
-| D2 | Proof artifacts = self-contained JSON (`lys/log-inclusion-proof/v1`, `lys/log-consistency-proof/v1`) with embedded verbatim checkpoint(s), standard base64, 2^53 guard (§3) | **PROPOSED — awaiting ratification** |
+| D1 | Signed root artifact = C2SP checkpoint in signed-note envelope, Ed25519, no timestamp line, no extension lines in v1 (§2) | **IMPLEMENTED — 2026-07-11, built to spec under the operator's build green-light; formal ratification pending, veto window open until 0.1.0 publishes.** Substance carried in `lys-core/src/checkpoint/` module docs |
+| D2 | Proof artifacts = self-contained JSON (`lys/log-inclusion-proof/v1`, `lys/log-consistency-proof/v1`) with embedded verbatim checkpoint(s), standard base64, 2^53 guard (§3) | **IMPLEMENTED — 2026-07-11, built to spec under the operator's build green-light; formal ratification pending, veto window open until 0.1.0 publishes.** Substance carried in `lys-core/src/tlog/` module docs |
 | D3 | RFC 9942 COSE receipts deferred to `lys-anchor`, added as a parallel v1 artifact, never replacing D2 (§4.1) | **PROPOSED — awaiting ratification** |
 | D4 | Attestation durable artifact migrates to COSE_Sign1 before 0.1.0; `alg = EdDSA(-8)` pending a deployed-practice check; byte-exact spec + adversarial review required before shipping (§4.2) | **PROPOSED — awaiting ratification** |
 | D5 | Certificates remain X.509; sealed envelopes remain `lys/sealed-envelope/v1` (§4.3) | **PROPOSED — awaiting ratification** |
-| D6 | Conformance testing for D1/D2 includes vectors verified against the Go `sumdb/note` reference, not only Rust implementations (§2.2) | **PROPOSED — awaiting ratification** |
+| D6 | Conformance testing for D1/D2 includes vectors verified against the Go `sumdb/note` reference, not only Rust implementations (§2.2) | **IMPLEMENTED — 2026-07-11.** Evidence: `lys-core/tests/go_conformance.rs` round-trips sign/verify (including a blank-line body and a failed-known-key rejection) against the vendored `golang.org/x/mod/sumdb/note` v0.22.0, byte-identical notes both ways |
 
-Ratified decisions get their status flipped here with a date and the ratifier's name; the sections above then become frozen contracts and move (in substance) into module-level docs alongside the code that implements them.
+Ratified decisions get their status flipped here with a date and the ratifier's name; the sections above then become frozen contracts and move (in substance) into module-level docs alongside the code that implements them. **IMPLEMENTED** is the intermediate state: code is built and tested to the proposed bytes, but nothing durable has been published under them and the formats do not freeze until 0.1.0 — the operator can still amend on review, and ratification remains a recorded human decision, never inferred from a build going green.

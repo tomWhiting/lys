@@ -7,6 +7,7 @@
 use std::path::Path;
 
 use lys_core::Ed25519Identity;
+use lys_core::checkpoint::NoteVerifierKey;
 
 use crate::commands::error::{CliError, CliResult};
 use crate::commands::hex::hex_lower;
@@ -40,17 +41,23 @@ pub fn generate(out: &Path) -> CliResult<()> {
     Ok(())
 }
 
-/// `lys key inspect --key <path>`.
+/// `lys key inspect --key <path> [--note-name <name>]`.
 ///
 /// Loads an existing identity key file and prints the Ed25519 public key
 /// and the derived X25519 public key (used for sealed payload key
-/// agreement), both as lowercase hex.
+/// agreement), both as lowercase hex. When `note_name` is given, also
+/// prints the signed-note verifier key line for that name — the name must
+/// equal the log origin this key signs checkpoints for, because `lys`
+/// verifiers enforce `checkpoint origin == verifier-key name`. Without a
+/// name there is nothing truthful to print, so the line is omitted.
 ///
 /// # Errors
 ///
-/// Returns [`CliError::KeyFileMissing`] if the file does not exist and
-/// [`CliError::Trust`] if it cannot be read or is not a valid 32-byte seed.
-pub fn inspect(key: &Path) -> CliResult<()> {
+/// Returns [`CliError::KeyFileMissing`] if the file does not exist,
+/// [`CliError::Trust`] if it cannot be read or is not a valid 32-byte seed,
+/// or if `note_name` violates the signed-note key-name rules (non-empty,
+/// no whitespace, no `'+'`).
+pub fn inspect(key: &Path, note_name: Option<&str>) -> CliResult<()> {
     let identity = load_identity(key)?;
     println!("identity key: {}", key.display());
     println!(
@@ -61,6 +68,11 @@ pub fn inspect(key: &Path) -> CliResult<()> {
         "public key (x25519): {}",
         hex_lower(&identity.x25519_public_key())
     );
+    if let Some(name) = note_name {
+        let verifier =
+            NoteVerifierKey::new(name, identity.public_key_bytes()).map_err(CliError::from)?;
+        println!("verifier key (signed-note): {}", verifier.to_spec());
+    }
     Ok(())
 }
 

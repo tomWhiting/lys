@@ -115,6 +115,83 @@ fn from_parts_with_wrong_leaf_count_fails_verification() {
     assert!(verify_consistency(&miscounted_old, &good_new, &consistency).is_err());
 }
 
+// --- Raw-leaf verification (transparency-log invariant) ---
+
+use crate::merkle::leaf::raw_leaf_hash;
+use crate::merkle::tree::RawLeaf;
+
+fn raw_tree(leaves: &[&[u8]]) -> AppendOnlyTree<RawLeaf> {
+    let mut tree = AppendOnlyTree::<RawLeaf>::new();
+    for leaf in leaves {
+        tree.append_raw(leaf);
+    }
+    tree
+}
+
+#[test]
+fn verify_inclusion_raw_accepts_correct_leaf_and_rejects_tampering() {
+    let tree = raw_tree(&[b"leaf-0", b"leaf-1", b"leaf-2"]);
+    let root = tree.root();
+    let proof = tree.prove_inclusion(1).unwrap();
+
+    // Accept: right bytes, right index, right root.
+    verify_inclusion_raw(&root, b"leaf-1", 1, &proof).unwrap();
+
+    // Reject: wrong bytes.
+    assert!(verify_inclusion_raw(&root, b"leaf-x", 1, &proof).is_err());
+
+    // Reject: wrong index.
+    assert!(verify_inclusion_raw(&root, b"leaf-1", 0, &proof).is_err());
+    assert!(verify_inclusion_raw(&root, b"leaf-1", 2, &proof).is_err());
+
+    // Reject: wrong root.
+    let other = raw_tree(&[b"leaf-0", b"leaf-x", b"leaf-2"]);
+    assert!(verify_inclusion_raw(&other.root(), b"leaf-1", 1, &proof).is_err());
+}
+
+#[test]
+fn verify_inclusion_raw_rejects_postcard_encoding_of_true_leaf() {
+    // Sentinel for the leaf-hash transparency invariant: the postcard
+    // encoding of the true leaf (length varint 0x06 then the bytes) must
+    // NOT verify where the raw bytes do.
+    let tree = raw_tree(&[b"leaf-0", b"leaf-1", b"leaf-2"]);
+    let root = tree.root();
+    let proof = tree.prove_inclusion(0).unwrap();
+
+    verify_inclusion_raw(&root, b"leaf-0", 0, &proof).unwrap();
+    assert!(verify_inclusion_raw(&root, b"\x06leaf-0", 0, &proof).is_err());
+}
+
+#[test]
+fn interior_node_preimage_does_not_verify_as_a_leaf() {
+    // RFC 6962 prefix confusion (0x00 leaf vs 0x01 node domain
+    // separation): a crafted "leaf" whose bytes are the concatenated child
+    // hashes must not verify at any position implying the interior node.
+    let tree = raw_tree(&[b"leaf-0", b"leaf-1"]);
+    let (root2_bytes, _count) = tree.root().to_parts();
+
+    let mut forged_leaf = Vec::with_capacity(64);
+    forged_leaf.extend_from_slice(&raw_leaf_hash(b"leaf-0"));
+    forged_leaf.extend_from_slice(&raw_leaf_hash(b"leaf-1"));
+
+    // If domain separation were broken, the 2-leaf root would equal the
+    // "1-leaf tree" root over the forged leaf (empty inclusion path).
+    let empty_proof = InclusionProof::try_from_bytes(Vec::new()).unwrap();
+    let root_as_single = RootHash::from_parts(root2_bytes, 1);
+    assert!(verify_inclusion_raw(&root_as_single, &forged_leaf, 0, &empty_proof).is_err());
+
+    // Nor does the forged leaf verify anywhere in the real 2-leaf tree.
+    let root = tree.root();
+    for index in 0..2 {
+        let proof = tree.prove_inclusion(index).unwrap();
+        assert!(verify_inclusion_raw(&root, &forged_leaf, index, &proof).is_err());
+    }
+
+    // And the true node hash differs from hashing the forged leaf as a
+    // leaf: SHA-256(0x01 ‖ h0 ‖ h1) != SHA-256(0x00 ‖ h0 ‖ h1).
+    assert_ne!(root2_bytes, raw_leaf_hash(&forged_leaf));
+}
+
 #[test]
 fn from_parts_with_wrong_root_bytes_fails_verification() {
     let mut tree = AppendOnlyTree::<u64>::new();

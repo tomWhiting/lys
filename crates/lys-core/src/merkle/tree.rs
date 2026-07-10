@@ -15,6 +15,12 @@
 //! converted to a deterministic byte representation via `serialize_leaf`
 //! before being pushed into the underlying ct-merkle tree, so the original
 //! `L` is not stored on the tree and the trust crate stays domain-agnostic.
+//!
+//! The [`RawLeaf`] marker selects the parallel raw-byte encoding:
+//! `AppendOnlyTree<RawLeaf>` hashes leaf bytes verbatim
+//! (`SHA-256(0x00 ‖ bytes)` per RFC 6962) via [`AppendOnlyTree::append_raw`]
+//! and never gains the postcard methods, so the two leaf encodings cannot
+//! be mixed in one tree.
 
 use std::fmt;
 use std::marker::PhantomData;
@@ -163,6 +169,53 @@ impl<L> AppendOnlyTree<L> {
         Ok(ConsistencyProof::from_inner(
             self.inner.prove_consistency(num_additions_usize),
         ))
+    }
+}
+
+/// Type-level marker for trees whose leaves are raw bytes hashed verbatim
+/// (leaf hash = `SHA-256(0x00 ‖ bytes)` per RFC 6962).
+///
+/// Uninhabited: never a value, and it deliberately does NOT implement
+/// `Serialize`, so the postcard methods ([`AppendOnlyTree::append`],
+/// [`AppendOnlyTree::reconstruct_from_leaves`]) do not exist on
+/// `AppendOnlyTree<RawLeaf>` — the two leaf encodings cannot be mixed in
+/// one tree even by accident.
+///
+/// **Invariant:** for every leaf appended via
+/// [`AppendOnlyTree::append_raw`],
+/// `leaf_hash = SHA-256(0x00 ‖ leaf-bytes)`; a third party reproduces it
+/// with `(printf '\x00'; cat leaf-file) | shasum -a 256`.
+pub enum RawLeaf {}
+
+impl AppendOnlyTree<RawLeaf> {
+    /// Appends raw bytes verbatim and returns the new tree size.
+    ///
+    /// The bytes are hashed exactly as supplied — no postcard, no length
+    /// prefix — so the RFC 6962 leaf hash is `SHA-256(0x00 ‖ leaf_bytes)`
+    /// (see [`raw_leaf_hash`](super::leaf::raw_leaf_hash)). Infallible:
+    /// there is no serialization step to fail.
+    pub fn append_raw(&mut self, leaf_bytes: &[u8]) -> u64 {
+        self.inner
+            .push(SerializedLeaf::from_raw_bytes(leaf_bytes.to_vec()));
+        self.inner.len()
+    }
+
+    /// Rebuilds a raw-leaf tree from leaves in their original append order.
+    ///
+    /// The reconstruction path for restart and prefix rebuilds, mirroring
+    /// [`AppendOnlyTree::reconstruct_from_leaves`] for the raw encoding.
+    /// Because it reuses [`Self::append_raw`], the rebuilt tree reproduces
+    /// the original root bit-for-bit.
+    pub fn reconstruct_from_raw_leaves<I>(leaves: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: AsRef<[u8]>,
+    {
+        let mut tree = Self::new();
+        for leaf in leaves {
+            tree.append_raw(leaf.as_ref());
+        }
+        tree
     }
 }
 

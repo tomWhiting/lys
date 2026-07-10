@@ -10,6 +10,7 @@ pub mod error;
 pub mod files;
 pub mod hex;
 pub mod key;
+pub mod log;
 pub mod pem;
 pub mod seal;
 pub mod verify;

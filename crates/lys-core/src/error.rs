@@ -99,6 +99,51 @@ pub enum TrustError {
     /// key bytes were structurally invalid.
     #[error("invalid signature")]
     InvalidSignature,
+
+    /// Building or encoding a checkpoint or signed note failed (invalid
+    /// origin or key name, malformed body).
+    #[error("checkpoint encoding failed: {reason}")]
+    CheckpointEncoding {
+        /// Human-readable cause of the encoding failure.
+        reason: String,
+    },
+
+    /// Parsing a checkpoint body failed. Used on already-verified body text
+    /// and operator-supplied text; artifact verification collapses it
+    /// (non-oracle).
+    #[error("checkpoint parsing failed: {reason}")]
+    CheckpointParsing {
+        /// Human-readable cause of the parsing failure.
+        reason: String,
+    },
+
+    /// A note verifier key string was malformed or internally inconsistent.
+    /// Trusted operator input — carries an actionable reason.
+    #[error("invalid note verifier key: {reason}")]
+    VerifierKey {
+        /// Human-readable cause of the verifier-key failure.
+        reason: String,
+    },
+
+    /// A signed note failed verification — deliberately omits the cause so
+    /// callers cannot distinguish malformed envelope, unknown key, or bad
+    /// signature (non-oracle).
+    #[error("note verification failed")]
+    NoteVerification,
+
+    /// Building a log proof artifact failed (tree too large for JSON-safe
+    /// integers, size/index invariant violations at build time).
+    #[error("log artifact encoding failed: {reason}")]
+    LogArtifactEncoding {
+        /// Human-readable cause of the encoding failure.
+        reason: String,
+    },
+
+    /// A log proof artifact failed verification — deliberately omits the
+    /// cause (non-oracle): bad checkpoint signature, size mismatch, root
+    /// mismatch, malformed hashes, and kind confusion are indistinguishable.
+    #[error("log artifact verification failed")]
+    LogArtifactVerification,
 }
 
 /// Convenience alias for `Result<T, TrustError>`.
@@ -232,6 +277,97 @@ mod tests {
         let err = TrustError::InvalidSignature;
         let display = err.to_string();
         assert!(display.contains("invalid signature"), "got: {display}");
+    }
+
+    #[test]
+    fn display_checkpoint_encoding() {
+        let err = TrustError::CheckpointEncoding {
+            reason: "origin contains '+'".to_string(),
+        };
+        let display = err.to_string();
+        assert!(
+            display.contains("checkpoint encoding failed"),
+            "got: {display}"
+        );
+        assert!(display.contains("origin contains '+'"), "got: {display}");
+    }
+
+    #[test]
+    fn display_checkpoint_parsing() {
+        let err = TrustError::CheckpointParsing {
+            reason: "tree size has a leading zero".to_string(),
+        };
+        let display = err.to_string();
+        assert!(
+            display.contains("checkpoint parsing failed"),
+            "got: {display}"
+        );
+        assert!(
+            display.contains("tree size has a leading zero"),
+            "got: {display}"
+        );
+    }
+
+    #[test]
+    fn display_verifier_key() {
+        let err = TrustError::VerifierKey {
+            reason: "declared key ID does not match".to_string(),
+        };
+        let display = err.to_string();
+        assert!(
+            display.contains("invalid note verifier key"),
+            "got: {display}"
+        );
+        assert!(
+            display.contains("declared key ID does not match"),
+            "got: {display}"
+        );
+    }
+
+    /// Non-oracle: the note-verification failure string is a single generic
+    /// message that never distinguishes a malformed envelope from an unknown
+    /// key from a bad signature.
+    #[test]
+    fn note_verification_display_is_single_and_generic() {
+        let display = TrustError::NoteVerification.to_string();
+        assert_eq!(display, "note verification failed");
+        for oracle_word in ["signature", "key", "envelope", "structure", "base64"] {
+            assert!(
+                !display.contains(oracle_word),
+                "non-oracle message must not mention {oracle_word}: {display}"
+            );
+        }
+    }
+
+    #[test]
+    fn display_log_artifact_encoding() {
+        let err = TrustError::LogArtifactEncoding {
+            reason: "tree size exceeds the JSON-safe bound".to_string(),
+        };
+        let display = err.to_string();
+        assert!(
+            display.contains("log artifact encoding failed"),
+            "got: {display}"
+        );
+        assert!(
+            display.contains("tree size exceeds the JSON-safe bound"),
+            "got: {display}"
+        );
+    }
+
+    /// Non-oracle: the artifact-verification failure string is a single
+    /// generic message that never distinguishes checkpoint, size, root,
+    /// hash, or kind failures.
+    #[test]
+    fn log_artifact_verification_display_is_single_and_generic() {
+        let display = TrustError::LogArtifactVerification.to_string();
+        assert_eq!(display, "log artifact verification failed");
+        for oracle_word in ["signature", "checkpoint", "root", "size", "hash", "format"] {
+            assert!(
+                !display.contains(oracle_word),
+                "non-oracle message must not mention {oracle_word}: {display}"
+            );
+        }
     }
 
     #[test]

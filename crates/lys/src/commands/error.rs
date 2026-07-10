@@ -124,6 +124,41 @@ pub enum CliError {
     #[error("sealed envelope open failed: invalid attestation or undecryptable envelope")]
     OpenFailed,
 
+    /// A log directory was required but is missing or uninitialized.
+    #[error(
+        "log directory not initialized: {} (run `lys log init --dir {} --origin <origin>` first)",
+        path.display(),
+        path.display()
+    )]
+    LogDirMissing {
+        /// Path that was checked for an initialized log directory.
+        path: PathBuf,
+    },
+
+    /// The log directory failed its integrity check or a structural rule.
+    /// Local trusted state — carries an actionable reason.
+    #[error("log directory invalid: {}: {reason}", path.display())]
+    LogDirInvalid {
+        /// The log directory that failed the check.
+        path: PathBuf,
+        /// The specific discrepancy or structural violation.
+        reason: String,
+    },
+
+    /// An inclusion-proof artifact did not verify. Deliberately non-oracle:
+    /// a malformed artifact, a bad checkpoint signature, an origin mismatch,
+    /// a size mismatch, and a root mismatch all collapse to this one message
+    /// so a caller learns nothing about which check rejected the artifact.
+    #[error("inclusion proof verification failed: invalid artifact, checkpoint, or leaf")]
+    LogInclusionVerificationFailed,
+
+    /// A consistency-proof artifact did not verify. Deliberately non-oracle:
+    /// a malformed artifact, a bad checkpoint signature, an origin mismatch,
+    /// a size mismatch, and a root mismatch all collapse to this one message
+    /// so a caller learns nothing about which check rejected the artifact.
+    #[error("consistency proof verification failed: invalid artifact or checkpoints")]
+    LogConsistencyVerificationFailed,
+
     /// A timestamp argument could not be parsed as RFC 3339.
     #[error("invalid timestamp {value:?}: expected RFC 3339, e.g. 2026-07-10T12:00:00Z ({source})")]
     InvalidTimestamp {
@@ -199,6 +234,56 @@ mod tests {
         assert!(!display.contains("wrong"), "got: {display}");
         assert!(!display.contains("tampered"), "got: {display}");
         assert!(!display.contains("signer"), "got: {display}");
+    }
+
+    #[test]
+    fn log_dir_missing_display_names_path_and_remedy() {
+        let err = CliError::LogDirMissing {
+            path: PathBuf::from("/logs/mylog"),
+        };
+        let display = err.to_string();
+        assert!(display.contains("/logs/mylog"), "got: {display}");
+        assert!(display.contains("lys log init"), "got: {display}");
+    }
+
+    #[test]
+    fn log_dir_invalid_display_names_path_and_reason() {
+        let err = CliError::LogDirInvalid {
+            path: PathBuf::from("/logs/mylog"),
+            reason: "leaf 3 is missing".to_string(),
+        };
+        let display = err.to_string();
+        assert!(display.contains("log directory invalid"), "got: {display}");
+        assert!(display.contains("/logs/mylog"), "got: {display}");
+        assert!(display.contains("leaf 3 is missing"), "got: {display}");
+    }
+
+    #[test]
+    fn log_inclusion_verification_failed_display_is_single_and_generic() {
+        let display = CliError::LogInclusionVerificationFailed.to_string();
+        assert!(
+            display.contains("inclusion proof verification failed"),
+            "got: {display}"
+        );
+        // Non-oracle: the message must not single out one failing check.
+        assert!(!display.contains("signature"), "got: {display}");
+        assert!(!display.contains("origin"), "got: {display}");
+        assert!(!display.contains("mismatch"), "got: {display}");
+        assert!(!display.contains("tampered"), "got: {display}");
+    }
+
+    #[test]
+    fn log_consistency_verification_failed_display_is_single_and_generic() {
+        let display = CliError::LogConsistencyVerificationFailed.to_string();
+        assert!(
+            display.contains("consistency proof verification failed"),
+            "got: {display}"
+        );
+        // Non-oracle: the message must not single out one failing check.
+        assert!(!display.contains("signature"), "got: {display}");
+        assert!(!display.contains("origin"), "got: {display}");
+        assert!(!display.contains("mismatch"), "got: {display}");
+        assert!(!display.contains("tampered"), "got: {display}");
     }
 
     #[test]

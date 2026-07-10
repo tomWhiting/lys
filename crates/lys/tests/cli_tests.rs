@@ -1326,3 +1326,82 @@ fn verify_rejects_malformed_attestation_json_with_exit_one() {
         "stderr: {stderr}"
     );
 }
+
+// ------------------------------------------------- key inspect --note-name
+
+/// Golden test seed from the design (32 ASCII bytes), shared with the
+/// lys-core golden vectors and the Go conformance gate.
+const GOLDEN_SEED: &[u8; 32] = b"lys-go-conformance-test-seed-01!";
+
+/// Golden verifier key text form for (example.com/lys/test, golden pubkey).
+const GOLDEN_VERIFIER_SPEC: &str =
+    "example.com/lys/test+52580cd9+AQz9D9gbFqzLxSMM9Fy6nUuTfYJ8bI29RKFE5aulcbni";
+
+#[test]
+fn key_inspect_note_name_prints_golden_verifier_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let key_path = dir.path().join("golden.key");
+    std::fs::write(&key_path, GOLDEN_SEED).unwrap();
+
+    let output = run_lys(&[
+        "key",
+        "inspect",
+        "--key",
+        path_str(&key_path),
+        "--note-name",
+        "example.com/lys/test",
+    ]);
+    assert_eq!(output.status.code(), Some(0), "{}", stderr_of(&output));
+    let stdout = stdout_of(&output);
+    let spec = field(&stdout, "verifier key (signed-note):");
+    assert_eq!(spec, GOLDEN_VERIFIER_SPEC);
+
+    // Cross-check against the library's own derivation.
+    let identity = Ed25519Identity::load_or_generate(&key_path).unwrap();
+    let expected = lys_core::checkpoint::NoteVerifierKey::new(
+        "example.com/lys/test",
+        identity.public_key_bytes(),
+    )
+    .unwrap();
+    assert_eq!(spec, expected.to_spec());
+
+    // Still never prints private material.
+    let seed_hex = hex_lower(GOLDEN_SEED);
+    assert!(!stdout.contains(&seed_hex), "private seed leaked");
+}
+
+#[test]
+fn key_inspect_without_note_name_prints_no_verifier_line() {
+    let dir = tempfile::tempdir().unwrap();
+    let key_path = dir.path().join("golden.key");
+    std::fs::write(&key_path, GOLDEN_SEED).unwrap();
+
+    let output = run_lys(&["key", "inspect", "--key", path_str(&key_path)]);
+    assert_eq!(output.status.code(), Some(0), "{}", stderr_of(&output));
+    assert!(
+        !stdout_of(&output).contains("verifier key"),
+        "no verifier line without --note-name: {}",
+        stdout_of(&output)
+    );
+}
+
+#[test]
+fn key_inspect_note_name_rejects_invalid_names() {
+    let dir = tempfile::tempdir().unwrap();
+    let key_path = dir.path().join("golden.key");
+    std::fs::write(&key_path, GOLDEN_SEED).unwrap();
+
+    for bad in ["has space", "has+plus", ""] {
+        let output = run_lys(&[
+            "key",
+            "inspect",
+            "--key",
+            path_str(&key_path),
+            "--note-name",
+            bad,
+        ]);
+        assert_eq!(output.status.code(), Some(1), "name {bad:?} was accepted");
+        let stderr = stderr_of(&output);
+        assert!(stderr.contains("invalid note verifier key"), "{stderr}");
+    }
+}

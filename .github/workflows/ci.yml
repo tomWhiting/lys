@@ -22,6 +22,16 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      # The D6 wire-conformance gate round-trips signed notes against the
+      # Go sumdb/note reference (vendored, hermetic). LYS_REQUIRE_GO below
+      # turns the gate's developer-machine skip path into a hard failure
+      # here, so CI can never silently pass without running it.
+      - name: Install Go toolchain (signed-note conformance gate)
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+
       - name: Cache cargo registry and build
         uses: Swatinem/rust-cache@v2
 
@@ -33,6 +43,8 @@ jobs:
 
       - name: Test
         run: cargo test --workspace
+        env:
+          LYS_REQUIRE_GO: "1"
 
   # Cryptographic dependencies carry real risk; audit them on every change.
   audit:
