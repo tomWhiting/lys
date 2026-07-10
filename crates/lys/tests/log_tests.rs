@@ -273,6 +273,69 @@ fn log_init_rejects_invalid_origins() {
     }
 }
 
+// ------------------------------------------------------------ log checkpoint
+
+#[test]
+fn log_checkpoint_with_missing_key_fails_and_writes_nothing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("log");
+    let init = run_lys(&[
+        "log",
+        "init",
+        "--dir",
+        path_str(&dir),
+        "--origin",
+        "example.com/lys/ckpt-fail",
+    ]);
+    assert_success(&init);
+
+    let missing_key = tmp.path().join("no-such.key");
+    let out = tmp.path().join("checkpoint.txt");
+    let output = run_lys(&[
+        "log",
+        "checkpoint",
+        "--dir",
+        path_str(&dir),
+        "--key",
+        path_str(&missing_key),
+        "--out",
+        path_str(&out),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = stderr_of(&output);
+    assert!(stderr.contains("identity key file not found"), "{stderr}");
+    assert!(stderr.contains("lys key generate"), "{stderr}");
+    assert!(!out.exists(), "no checkpoint on failure");
+    assert!(
+        !missing_key.exists(),
+        "checkpoint must never mint key material"
+    );
+}
+
+#[test]
+fn log_checkpoint_on_uninitialized_dir_fails_and_writes_nothing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let key = tmp.path().join("signer.key");
+    let generate = run_lys(&["key", "generate", "--out", path_str(&key)]);
+    assert_success(&generate);
+
+    let out = tmp.path().join("checkpoint.txt");
+    let output = run_lys(&[
+        "log",
+        "checkpoint",
+        "--dir",
+        path_str(&tmp.path().join("never-initialized")),
+        "--key",
+        path_str(&key),
+        "--out",
+        path_str(&out),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = stderr_of(&output);
+    assert!(stderr.contains("log init"), "remedy missing: {stderr}");
+    assert!(!out.exists(), "no checkpoint on failure");
+}
+
 // ------------------------------------------------------- golden design vectors
 
 #[test]

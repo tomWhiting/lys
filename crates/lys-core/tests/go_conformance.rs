@@ -141,6 +141,14 @@ fn run_go_tool(go: &Path, gocache: &Path, args: &[&str], input: &[u8]) -> (bool,
 #[test]
 fn go_conformance_round_trips() {
     let Some(go) = find_go() else {
+        // The skip is for developer machines only. CI sets LYS_REQUIRE_GO,
+        // so a missing toolchain there is a hard failure — the D6 gate can
+        // never silently degrade to "passed" where it matters.
+        assert!(
+            std::env::var_os("LYS_REQUIRE_GO").is_none(),
+            "LYS_REQUIRE_GO is set but no Go toolchain was found — \
+             the Go conformance gate must not skip in this environment"
+        );
         eprintln!("skipping Go conformance round-trip: no Go toolchain found");
         return;
     };

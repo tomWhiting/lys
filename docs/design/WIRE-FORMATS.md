@@ -26,7 +26,7 @@ Note: `lys/attestation/v1` is frozen as a format, but §4.2 proposes that **the 
 
 ---
 
-## 2. RATIFIED (D1) — signed tree root: C2SP checkpoint (signed note)
+## 2. IMPLEMENTED (D1) — signed tree root: C2SP checkpoint (signed note)
 
 **The artifact `lys log` emits for "here is the state of the log, signed" is a [C2SP tlog-checkpoint](https://github.com/C2SP/C2SP/blob/main/tlog-checkpoint.md) wrapped in the [C2SP signed-note](https://github.com/C2SP/C2SP/blob/main/signed-note.md) envelope, signed with Ed25519.**
 
@@ -72,7 +72,7 @@ Byte-exact rules that Go/Rust verifiers enforce silently — each one gets a tes
 
 ---
 
-## 3. RATIFIED (D2) — inclusion & consistency proofs: self-contained JSON objects
+## 3. IMPLEMENTED (D2) — inclusion & consistency proofs: self-contained JSON objects
 
 **The artifacts `lys log prove` emits are JSON objects carrying the RFC 6962 proof triple plus the relevant checkpoint(s) embedded verbatim** — the Sigstore-bundle `InclusionProof` pattern, which is the surviving precedent for proofs persisted as files rather than served from an online API.
 
@@ -139,11 +139,11 @@ Proposal: the stranger-facing attestation artifact becomes a **COSE_Sign1** (pay
 
 | # | Decision | Status |
 |---|---|---|
-| D1 | Signed root artifact = C2SP checkpoint in signed-note envelope, Ed25519, no timestamp line, no extension lines in v1 (§2) | **RATIFIED — 2026-07-11, Tom Whiting.** Substance frozen in `lys-core/src/checkpoint/` module docs |
-| D2 | Proof artifacts = self-contained JSON (`lys/log-inclusion-proof/v1`, `lys/log-consistency-proof/v1`) with embedded verbatim checkpoint(s), standard base64, 2^53 guard (§3) | **RATIFIED — 2026-07-11, Tom Whiting.** Substance frozen in `lys-core/src/tlog/` module docs; format strings marked FROZEN in `tlog/artifact.rs` |
+| D1 | Signed root artifact = C2SP checkpoint in signed-note envelope, Ed25519, no timestamp line, no extension lines in v1 (§2) | **IMPLEMENTED — 2026-07-11, built to spec under the operator's build green-light; formal ratification pending, veto window open until 0.1.0 publishes.** Substance carried in `lys-core/src/checkpoint/` module docs |
+| D2 | Proof artifacts = self-contained JSON (`lys/log-inclusion-proof/v1`, `lys/log-consistency-proof/v1`) with embedded verbatim checkpoint(s), standard base64, 2^53 guard (§3) | **IMPLEMENTED — 2026-07-11, built to spec under the operator's build green-light; formal ratification pending, veto window open until 0.1.0 publishes.** Substance carried in `lys-core/src/tlog/` module docs |
 | D3 | RFC 9942 COSE receipts deferred to `lys-anchor`, added as a parallel v1 artifact, never replacing D2 (§4.1) | **PROPOSED — awaiting ratification** |
 | D4 | Attestation durable artifact migrates to COSE_Sign1 before 0.1.0; `alg = EdDSA(-8)` pending a deployed-practice check; byte-exact spec + adversarial review required before shipping (§4.2) | **PROPOSED — awaiting ratification** |
 | D5 | Certificates remain X.509; sealed envelopes remain `lys/sealed-envelope/v1` (§4.3) | **PROPOSED — awaiting ratification** |
-| D6 | Conformance testing for D1/D2 includes vectors verified against the Go `sumdb/note` reference, not only Rust implementations (§2.2) | **RATIFIED — 2026-07-11, Tom Whiting.** Evidence: `lys-core/tests/go_conformance.rs` round-trips sign/verify (including a blank-line body and a failed-known-key rejection) against the vendored `golang.org/x/mod/sumdb/note` v0.22.0, byte-identical notes both ways |
+| D6 | Conformance testing for D1/D2 includes vectors verified against the Go `sumdb/note` reference, not only Rust implementations (§2.2) | **IMPLEMENTED — 2026-07-11.** Evidence: `lys-core/tests/go_conformance.rs` round-trips sign/verify (including a blank-line body and a failed-known-key rejection) against the vendored `golang.org/x/mod/sumdb/note` v0.22.0, byte-identical notes both ways |
 
-Ratified decisions get their status flipped here with a date and the ratifier's name; the sections above then become frozen contracts and move (in substance) into module-level docs alongside the code that implements them.
+Ratified decisions get their status flipped here with a date and the ratifier's name; the sections above then become frozen contracts and move (in substance) into module-level docs alongside the code that implements them. **IMPLEMENTED** is the intermediate state: code is built and tested to the proposed bytes, but nothing durable has been published under them and the formats do not freeze until 0.1.0 — the operator can still amend on review, and ratification remains a recorded human decision, never inferred from a build going green.
