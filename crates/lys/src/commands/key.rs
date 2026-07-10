@@ -66,10 +66,13 @@ pub fn inspect(key: &Path) -> CliResult<()> {
 
 /// Load an identity from an existing key file, refusing to generate one.
 ///
-/// `lys-core` exposes only `load_or_generate` for file-backed identities, so
-/// consuming subcommands (`key inspect`, `attest`) guard on existence first:
-/// silently minting a fresh identity when the user pointed at a missing file
-/// would sign with a key they never created.
+/// Consuming subcommands (`key inspect`, `attest`, `ca issue`, `seal`,
+/// `open`) go through [`Ed25519Identity::load`], which can never mint key
+/// material — signing with a key the operator never created is the failure
+/// this guard exists to prevent, and the load-only constructor closes it
+/// with no check-then-act window. The existence pre-check remains solely to
+/// produce the friendlier [`CliError::KeyFileMissing`] message with its
+/// `lys key generate` remedy.
 ///
 /// # Errors
 ///
@@ -81,5 +84,5 @@ pub fn load_identity(key: &Path) -> CliResult<Ed25519Identity> {
             path: key.to_path_buf(),
         });
     }
-    Ed25519Identity::load_or_generate(key).map_err(CliError::from)
+    Ed25519Identity::load(key).map_err(CliError::from)
 }

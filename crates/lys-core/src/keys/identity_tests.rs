@@ -247,6 +247,54 @@ fn load_or_generate_loads_existing_valid_file() {
     assert_eq!(id.public_key_bytes(), expected_pk);
 }
 
+// ─── load (load-only) ─────────────────────────────────────────────
+
+#[test]
+fn load_reads_existing_valid_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("identity.key");
+    let seed = [5u8; 32];
+    std::fs::write(&path, seed).unwrap();
+    #[cfg(unix)]
+    chmod(&path, 0o600);
+
+    let id = Ed25519Identity::load(&path).unwrap();
+    let expected_pk = ed25519_dalek::SigningKey::from_bytes(&seed)
+        .verifying_key()
+        .to_bytes();
+    assert_eq!(id.public_key_bytes(), expected_pk);
+}
+
+#[test]
+fn load_refuses_missing_file_and_creates_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("identity.key");
+    assert!(!path.exists());
+
+    let err = Ed25519Identity::load(&path).unwrap_err();
+    assert!(
+        matches!(err, TrustError::KeyManagement { .. }),
+        "got: {err:?}"
+    );
+    assert!(
+        !path.exists(),
+        "load-only constructor must never create a key file"
+    );
+}
+
+#[test]
+fn load_rejects_wrong_length() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("identity.key");
+    std::fs::write(&path, [1u8; 16]).unwrap();
+
+    let err = Ed25519Identity::load(&path).unwrap_err();
+    assert!(
+        matches!(err, TrustError::KeyManagement { .. }),
+        "got: {err:?}"
+    );
+}
+
 #[test]
 fn load_or_generate_idempotent() {
     let dir = tempfile::tempdir().unwrap();

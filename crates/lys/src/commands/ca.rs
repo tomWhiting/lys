@@ -13,7 +13,10 @@
 //! generate` creates key material — and the subject keypair the library
 //! generates during issuance is discarded, never written to disk or printed;
 //! only its public half is reported. Verification failures collapse to one
-//! non-oracle message, mirroring `lys verify`.
+//! non-oracle message, mirroring `lys verify`. Claims echoed by `ca verify`
+//! are printed verbatim only when free of control characters; anything else
+//! is shown as hex, so certificate contents can never inject terminal
+//! escape sequences into the verification output.
 
 use std::path::Path;
 use std::time::Duration;
@@ -45,6 +48,18 @@ fn capability_claims_oid() -> Vec<u64> {
     let mut oid = LYS_OID_ARC.to_vec();
     oid.push(CAPABILITY_CLAIMS_COMPONENT);
     oid
+}
+
+/// Whether claim text can be echoed to a terminal verbatim.
+///
+/// Certificate contents are attacker-influenceable (any issuer under the
+/// trusted key can embed arbitrary bytes, and JSON strings may carry raw
+/// control characters), so anything containing control characters beyond
+/// newline and tab — including ANSI escape sequences that could spoof the
+/// surrounding verification output — falls back to hex.
+fn is_terminal_safe(text: &str) -> bool {
+    text.chars()
+        .all(|character| !character.is_control() || character == '\n' || character == '\t')
 }
 
 /// `lys ca issue --key <path> --subject <name> [--claims <file>]
@@ -155,7 +170,13 @@ pub fn verify(cert: &Path, issuer_public_key: &str, at: Option<&str>) -> CliResu
     println!("checked at (rfc3339): {}", checked_at.to_rfc3339());
     match claims {
         Some(bytes) => match String::from_utf8(bytes) {
-            Ok(text) => println!("capability claims: {text}"),
+            Ok(text) if is_terminal_safe(&text) => println!("capability claims: {text}"),
+            // Non-UTF-8 or control characters (terminal escape injection):
+            // echo the bytes as hex, never raw.
+            Ok(unsafe_text) => println!(
+                "capability claims (hex): {}",
+                hex_lower(unsafe_text.as_bytes())
+            ),
             Err(non_utf8) => println!(
                 "capability claims (hex): {}",
                 hex_lower(non_utf8.as_bytes())
@@ -176,5 +197,14 @@ mod tests {
         let oid = capability_claims_oid();
         assert_eq!(oid, vec![1, 3, 6, 1, 4, 1, 58888, 1]);
         assert_eq!(&oid[..LYS_OID_ARC.len()], LYS_OID_ARC);
+    }
+
+    #[test]
+    fn terminal_safety_rejects_escape_and_carriage_control() {
+        assert!(is_terminal_safe("{\"role\": \"reviewer\"}"));
+        assert!(is_terminal_safe("multi\nline\tclaims"));
+        assert!(!is_terminal_safe("claims \u{1b}[2K\u{1b}[1A spoofed"));
+        assert!(!is_terminal_safe("overwrite\rme"));
+        assert!(!is_terminal_safe("bell\u{07}"));
     }
 }

@@ -147,6 +147,28 @@ impl Ed25519Identity {
         }
     }
 
+    /// Loads the identity from an existing key file, never generating one.
+    ///
+    /// The load-only counterpart of [`Self::load_or_generate`], for callers
+    /// that consume an identity (signing, unsealing) rather than provision
+    /// one: a missing file is an error, not a trigger to mint a fresh key.
+    /// Because existence is never pre-checked and then acted on separately,
+    /// there is no window in which a vanished file can be silently replaced
+    /// by a new identity.
+    ///
+    /// Same file format and permission handling as
+    /// [`Self::load_or_generate`]: raw 32-byte seed, `tracing::warn!` on
+    /// loose Unix permissions.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TrustError::KeyManagement`] if the file cannot be read
+    /// (including when it does not exist) or its length is not exactly
+    /// 32 bytes.
+    pub fn load(path: &Path) -> TrustResult<Self> {
+        load_existing(path)
+    }
+
     /// Loads the identity from the `LYS_IDENTITY_KEY` environment variable.
     ///
     /// The value is a base64-encoded 32-byte seed. Both standard and

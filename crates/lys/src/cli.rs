@@ -111,7 +111,8 @@ pub enum Command {
         #[arg(long)]
         attestation: PathBuf,
 
-        /// Path to write the decrypted payload to.
+        /// Path to write the decrypted payload to (created mode 0600 on
+        /// Unix).
         #[arg(long)]
         out: PathBuf,
     },

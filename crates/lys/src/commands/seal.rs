@@ -24,10 +24,13 @@
 //!
 //! Invariants: both key-consuming commands refuse a missing key file — only
 //! `lys key generate` creates key material. Plaintext is never written to
-//! stdout; `lys open` writes it to `--out` and prints only public metadata.
-//! Open failures are non-oracle: wrong recipient key, forged or mismatched
-//! sender attestation, and tampered envelope fields all collapse to the one
-//! generic [`CliError::OpenFailed`] message.
+//! stdout; `lys open` writes it to `--out` only, created owner-readable
+//! (mode `0600` on Unix), and prints only public metadata. A failed `seal`
+//! leaves no partial outputs: if the attestation cannot be written, the
+//! already-written envelope is removed. Open failures are non-oracle: wrong
+//! recipient key, forged or mismatched sender attestation, and tampered
+//! envelope fields all collapse to the one generic [`CliError::OpenFailed`]
+//! message.
 
 use std::path::Path;
 
@@ -35,7 +38,7 @@ use lys_core::attestation::Attestation;
 use lys_core::seal::{SealedEnvelope, open_and_verify, sign_and_seal};
 
 use crate::commands::error::{CliError, CliResult};
-use crate::commands::files::{read_file, write_file};
+use crate::commands::files::{read_file, write_file, write_file_private};
 use crate::commands::hex::{hex_lower, parse_hex_32};
 use crate::commands::key::load_identity;
 
@@ -79,11 +82,22 @@ pub fn seal(
         })?;
     attestation_json.push('\n');
     write_file(out, envelope_json.as_bytes(), "sealed envelope file")?;
-    write_file(
+    if let Err(error) = write_file(
         attestation_out,
         attestation_json.as_bytes(),
         "seal attestation file",
-    )?;
+    ) {
+        // Failed commands leave no partial outputs: an envelope without its
+        // attestation is unopenable by `lys open`, so remove it rather than
+        // strand it. Best-effort — the write failure is what surfaces.
+        if let Err(cleanup) = std::fs::remove_file(out) {
+            eprintln!(
+                "warning: failed to remove partial sealed envelope {}: {cleanup}",
+                out.display()
+            );
+        }
+        return Err(error);
+    }
 
     println!("sealed payload: {}", payload.display());
     println!("recipient public key (x25519): {}", hex_lower(&recipient));
@@ -148,7 +162,9 @@ pub fn open(
     )
     .map_err(|_err| CliError::OpenFailed)?;
 
-    write_file(out, &plaintext, "opened payload file")?;
+    // The payload was confidential enough to be sealed; the recovered
+    // plaintext lands owner-readable only (0600 on Unix), not umask-default.
+    write_file_private(out, &plaintext, "opened payload file")?;
 
     println!("sealed envelope opened");
     println!("sender public key (ed25519): {}", hex_lower(&sender));

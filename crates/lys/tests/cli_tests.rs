@@ -13,7 +13,9 @@ use std::process::{Command, Output};
 use base64::Engine;
 use lys_core::Ed25519Identity;
 use lys_core::attestation::{Attestation, verify_attestation};
-use lys_core::ca::{decode_extension, verify_certificate_chain};
+use lys_core::ca::{
+    CertificateAuthority, decode_extension, encode_extension, verify_certificate_chain,
+};
 use lys_core::seal::{SealedEnvelope, open_and_verify};
 
 /// Spawn the compiled `lys` binary with the given arguments.
@@ -732,6 +734,60 @@ fn ca_verify_rejects_non_pem_certificate_file() {
     );
 }
 
+#[test]
+fn ca_verify_echoes_control_character_claims_as_hex_never_raw() {
+    // `lys ca issue` only embeds valid JSON, but `ca verify` must handle
+    // certificates from ANY issuer under the trusted key. Issue one directly
+    // through lys-core with raw terminal escape bytes in the claims
+    // extension and confirm the CLI hex-encodes rather than replays them.
+    let dir = tempfile::tempdir().unwrap();
+    let key_path = dir.path().join("issuer.key");
+    let cert_path = dir.path().join("hostile-claims.pem");
+
+    let generate = run_lys(&["key", "generate", "--out", path_str(&key_path)]);
+    assert_eq!(generate.status.code(), Some(0), "{}", stderr_of(&generate));
+    let issuer_pub = field(&stdout_of(&generate), "public key (ed25519):");
+
+    let identity = lys_core::Ed25519Identity::load(&key_path).unwrap();
+    let authority = CertificateAuthority::new(identity);
+    let hostile_claims = b"claims \x1b[2K\x1b[1A certificate verified (spoofed)".to_vec();
+    let issued = authority
+        .issue_certificate(
+            "escape-artist",
+            std::time::Duration::from_secs(86_400),
+            vec![encode_extension(CLAIMS_OID, hostile_claims)],
+        )
+        .unwrap();
+
+    let body = base64::engine::general_purpose::STANDARD.encode(&issued.der_bytes);
+    let mut pem_text = String::from("-----BEGIN CERTIFICATE-----\n");
+    for chunk in body.as_bytes().chunks(64) {
+        pem_text.push_str(std::str::from_utf8(chunk).unwrap());
+        pem_text.push('\n');
+    }
+    pem_text.push_str("-----END CERTIFICATE-----\n");
+    std::fs::write(&cert_path, pem_text).unwrap();
+
+    let output = run_lys(&[
+        "ca",
+        "verify",
+        "--cert",
+        path_str(&cert_path),
+        "--issuer-public-key",
+        &issuer_pub,
+    ]);
+    assert_eq!(output.status.code(), Some(0), "{}", stderr_of(&output));
+    let stdout = stdout_of(&output);
+    assert!(
+        !stdout.contains('\u{1b}'),
+        "raw escape byte replayed to the terminal: {stdout:?}"
+    );
+    assert!(
+        stdout.contains("capability claims (hex):"),
+        "control-character claims must fall back to hex: {stdout}"
+    );
+}
+
 // ----------------------------------------------------------------- seal / open
 
 /// Everything `seal_fixture` produces, so tests can pick what they need.
@@ -934,6 +990,95 @@ fn seal_rejects_invalid_recipient_public_key_hex() {
         );
         assert!(!envelope_path.exists(), "no envelope on failure");
     }
+}
+
+#[test]
+fn seal_attestation_write_failure_leaves_no_partial_envelope() {
+    let dir = tempfile::tempdir().unwrap();
+    let sender_key = dir.path().join("sender.key");
+    let recipient_key = dir.path().join("recipient.key");
+    let payload_path = dir.path().join("payload.bin");
+    let envelope_path = dir.path().join("envelope.json");
+    // Unwritable attestation destination: parent directory does not exist.
+    let attestation_path = dir.path().join("no-such-dir").join("attestation.json");
+
+    let generate_sender = run_lys(&["key", "generate", "--out", path_str(&sender_key)]);
+    assert_eq!(
+        generate_sender.status.code(),
+        Some(0),
+        "{}",
+        stderr_of(&generate_sender)
+    );
+    let generate_recipient = run_lys(&["key", "generate", "--out", path_str(&recipient_key)]);
+    assert_eq!(
+        generate_recipient.status.code(),
+        Some(0),
+        "{}",
+        stderr_of(&generate_recipient)
+    );
+    let inspect = run_lys(&["key", "inspect", "--key", path_str(&recipient_key)]);
+    assert_eq!(inspect.status.code(), Some(0), "{}", stderr_of(&inspect));
+    let recipient_x25519_pub = field(&stdout_of(&inspect), "public key (x25519):");
+    std::fs::write(&payload_path, b"payload").unwrap();
+
+    let output = run_lys(&[
+        "seal",
+        "--key",
+        path_str(&sender_key),
+        "--recipient-public-key",
+        &recipient_x25519_pub,
+        "--payload",
+        path_str(&payload_path),
+        "--out",
+        path_str(&envelope_path),
+        "--attestation-out",
+        path_str(&attestation_path),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("seal attestation file"),
+        "stderr: {}",
+        stderr_of(&output)
+    );
+    // The envelope written before the attestation failure must be cleaned
+    // up: an envelope without its attestation is unopenable, and failed
+    // commands leave no partial outputs.
+    assert!(
+        !envelope_path.exists(),
+        "orphaned envelope left behind after attestation write failure"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn open_writes_plaintext_owner_readable_only() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let fixture = seal_fixture(dir.path(), b"confidential payload");
+    let out_path = dir.path().join("opened.bin");
+
+    let output = run_lys(&[
+        "open",
+        "--key",
+        path_str(&fixture.recipient_key),
+        "--sender-public-key",
+        &fixture.sender_pub,
+        "--envelope",
+        path_str(&fixture.envelope_path),
+        "--attestation",
+        path_str(&fixture.attestation_path),
+        "--out",
+        path_str(&out_path),
+    ]);
+    assert_eq!(output.status.code(), Some(0), "{}", stderr_of(&output));
+
+    let mode = std::fs::metadata(&out_path).unwrap().permissions().mode();
+    assert_eq!(
+        mode & 0o777,
+        0o600,
+        "recovered plaintext must be owner-readable only"
+    );
 }
 
 #[test]
