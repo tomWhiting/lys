@@ -191,6 +191,8 @@ capability claims embedded from: capabilities.json
 certificate written: agent-noor.pem
 ```
 
+One thing to read precisely: the certificate's subject keypair is generated at issuance and immediately discarded — nobody holds its private half. The certificate is a signed, verifiable claims object naming a subject, not a binding to the agent's signing key (which appears below and is a different key).
+
 Any counterparty holding the issuer's public key verifies the certificate and reads the claims — "should I trust this agent?" becomes a query:
 
 ```console
